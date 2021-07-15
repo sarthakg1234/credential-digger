@@ -371,14 +371,7 @@ def get_discoveries():
         order_direction=order_direction)
 
     # Add the category to each discovery
-    rulesdict, cat = _get_rules()
-    categories_found = set()
-    for discovery in discoveries:
-        if discovery['rule_id']:
-            discovery['category'] = rulesdict[discovery['rule_id']]['category']
-        else:
-            discovery['category'] = '(rule deleted)'
-        categories_found.add(discovery['category'])
+    _assign_categories(discoveries)
 
     # Build the response json
     class States(Enum):
@@ -447,6 +440,26 @@ def update_similar_discoveries():
         return 'Error in updating similar snippets', 500
     else:
         return 'OK', 200
+
+def _assign_categories(discoveries):
+    """ Add the category to each discovery
+
+    Parameters
+    ----------
+    discoveries: list
+        List of discoveries without assigned categories to them
+
+    Returns
+    -------
+    list
+        List of discoveries with categories assigned to them
+    """
+    rulesdict, _ = _get_rules()
+    for discovery in discoveries:
+        if discovery['rule_id']:
+            discovery['category'] = rulesdict[discovery['rule_id']]['category']
+        else:
+            discovery['category'] = '(rule deleted)'
 
 @app.route('/export_discoveries_csv', methods=['GET', 'POST'])
 def export_discoveries_csv():
