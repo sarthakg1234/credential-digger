@@ -1,3 +1,5 @@
+import csv
+import io
 import os
 import sys
 import threading
@@ -177,19 +179,31 @@ def discoveries():
     active_scans = _get_active_scans()
     scanning = url in active_scans
 
+    _, discoveries = c.get_discoveries(url, file)
+    leaks_count = c.count_discoveries_per_state(discoveries, state='new')
+    false_positives_count = c.count_discoveries_per_state(
+        discoveries, state='false_positive')
+    addressing_count = c.count_discoveries_per_state(
+        discoveries, state='addressing')
+    not_relevant_count = c.count_discoveries_per_state(
+        discoveries, state='not_relevant')
+    fixed_count = c.count_discoveries_per_state(discoveries, state='fixed')
+
+    page_to_render = 'discoveries/discoveries.html'
     if file:
-        return render_template('discoveries/file.html',
-                               url=url,
-                               file=file,
-                               discoveries_count=discoveries_count,
-                               scanning=scanning,
-                               categories=list(cat))
-    else:
-        return render_template('discoveries/discoveries.html',
-                               url=url,
-                               discoveries_count=discoveries_count,
-                               scanning=scanning,
-                               categories=list(cat))
+        page_to_render = 'discoveries/file.html'
+
+    return render_template(page_to_render,
+                           url=url,
+                           file=file,
+                           discoveries_count=discoveries_count,
+                           scanning=scanning,
+                           categories=list(cat),
+                           leaks_count=leaks_count,
+                           false_positives_count=false_positives_count,
+                           addressing_count=addressing_count,
+                           not_relevant_count=not_relevant_count,
+                           fixed_count=fixed_count)
 
 
 @app.route('/rules')
@@ -433,6 +447,44 @@ def update_similar_discoveries():
         return 'Error in updating similar snippets', 500
     else:
         return 'OK', 200
+
+@app.route('/export_discoveries_csv', methods=['GET', 'POST'])
+def export_discoveries_csv():
+    url = request.form.get('repo_url')
+    _, discoveries = c.get_discoveries(url)
+
+    # Add the category to each discovery
+    _assign_categories(discoveries)
+
+    # States of discoveries to export
+    states = []
+    if request.form.get('checkAll') == 'all':
+        states = ['new', 'false_positive',
+                  'addressing', 'not_relevant', 'fixed']
+    else:
+        states = request.form.getlist('check')
+
+    # filter out based on states
+    filtered_discoveries = list(
+        filter(lambda d: d.get('state') in states, discoveries))
+
+    try:
+        stringIO = io.StringIO()
+        csv_writer = csv.DictWriter(stringIO, discoveries[0].keys())
+        csv_writer.writeheader()
+        csv_writer.writerows(filtered_discoveries)
+        response_csv = make_response(stringIO.getvalue())
+        report_name = f'report-{url.split("/")[-1]}.csv'
+        response_csv.headers['Content-Disposition'] = f'attachment; \
+                                                    filename={report_name}'
+        response_csv.headers['Content-type'] = 'text/csv'
+        return response_csv
+    except IndexError as error:
+        app.logger.error(error)
+    except Exception as exception:
+        app.logger.exception(exception)
+
+    return 'No content', 204
 
 jwt = JWTManager(app)
 if __name__ == '__main__':
